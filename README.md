@@ -123,3 +123,7 @@ Then remove the `$group` row and the shortcuts from your `config.toml`.
 ## Development
 
 Self-check: `python3 group_spaces.py --test`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
