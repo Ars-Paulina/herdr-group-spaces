@@ -3,7 +3,7 @@
 A [herdr](https://herdr.dev) plugin that groups your Spaces by project and puts a header on each group.
 
 - Spaces whose first pane is inside the same git repo are grouped together (worktrees count as their main repo).
-- Spaces outside a git repo are each their own group, even when two share a name.
+- Spaces outside a git repo are grouped by folder. Spaces in your home folder are each their own group, even when two share a name.
 - Groups are ordered by their most urgent Space: blocked, working, done, idle. Inside a group, the same order applies.
 - The first Space of each group gets a `$group` token holding the project name.
 

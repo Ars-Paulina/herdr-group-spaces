@@ -2,7 +2,7 @@
 """Group herdr Spaces by project, then sort by status inside each group.
 
 Project = git repo of the space's first pane (worktrees count as their main repo).
-Spaces outside a repo are each their own group, even when names repeat.
+Spaces outside a repo group by folder; spaces in the home folder are each their own group.
 Groups are ordered by their most urgent space: blocked, working, done, idle, rest.
 Ties keep their current order. The first space of each group gets a `$group`
 metadata token with the project name; show it with a row in [ui.sidebar.spaces].
@@ -15,6 +15,7 @@ import fcntl, json, os, socket, subprocess, sys
 SOCK = os.environ.get("HERDR_SOCKET_PATH") or os.path.expanduser("~/.config/herdr/herdr.sock")
 RANK = {"blocked": 0, "working": 1, "done": 2, "idle": 9}  # idle always last, below unknown (4)
 SOURCE = "group-spaces"
+HOME = os.path.normpath(os.path.expanduser("~"))
 
 
 def call(method, params=None):
@@ -55,9 +56,15 @@ def plan(workspaces, panes, repo_of=repo_of):
         cwd.setdefault(p["workspace_id"], p.get("foreground_cwd") or p.get("cwd"))
     groups = {}  # insertion order -> ties keep current order
     for w in workspaces:
-        repo = repo_of(cwd.get(w["workspace_id"]))
-        key = ("repo", repo) if repo else ("space", w["workspace_id"])
-        groups.setdefault(key, (repo or w.get("label") or "?", []))[1].append(w)
+        d = cwd.get(w["workspace_id"])
+        repo = repo_of(d)
+        if repo:  # same repo (worktrees included) -> one group
+            key, name = ("repo", repo), repo
+        elif d and os.path.normpath(d) != HOME:  # no repo: same folder -> one group
+            key, name = ("dir", os.path.normpath(d)), os.path.basename(os.path.normpath(d)) or d
+        else:  # home folder or unknown: every space is its own group, even with the same name
+            key, name = ("space", w["workspace_id"]), w.get("label") or "?"
+        groups.setdefault(key, (name, []))[1].append(w)
     rank = lambda w: RANK.get(w["agent_status"], 4)
     order, headers = [], {}
     for name, members in sorted(groups.values(), key=lambda g: min(map(rank, g[1]))):
@@ -85,12 +92,15 @@ def test():
     repos = {"/x": "x", "/y": "y"}.get
     ws = [{"workspace_id": i, "label": l, "agent_status": s} for i, l, s in [
         ("a", "a", "idle"), ("b", "b", "working"), ("c", "c", "blocked"), ("d", "d", "done"),
-        ("e", "~", "idle"), ("f", "~", "idle")]]
+        ("e", "~", "idle"), ("f", "~", "idle"), ("g", "PC", "idle"), ("h", "PC", "idle")]]
     panes = [{"workspace_id": i, "cwd": c} for i, c in
-             [("a", "/x"), ("b", "/y"), ("c", "/x"), ("d", "/y"), ("e", "/n"), ("f", "/n")]]
+             [("a", "/x"), ("b", "/y"), ("c", "/x"), ("d", "/y"), ("e", HOME), ("f", HOME),
+              ("g", "/p/PC"), ("h", "/p/PC/")]]
     order, headers = plan(ws, panes, repos)
-    assert order == ["c", "a", "b", "d", "e", "f"], order  # x holds the blocked one, so first
-    assert headers == {"c": "x", "a": None, "b": "y", "d": None, "e": "~", "f": "~"}, headers
+    assert order == ["c", "a", "b", "d", "e", "f", "g", "h"], order  # x holds the blocked one, so first
+    assert headers == {"c": "x", "a": None, "b": "y", "d": None,
+                       "e": "~", "f": "~",  # home: separate groups even with the same name
+                       "g": "PC", "h": None}, headers  # same non-repo folder: one group
     print("ok")
 
 
