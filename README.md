@@ -9,55 +9,89 @@ A [herdr](https://herdr.dev) plugin that groups your Spaces by project and puts 
 
 It runs on herdr startup and whenever a Space or pane opens/closes, a Space is renamed, pane focus moves, or an agent changes status. No background process.
 
-## Install
-
-```bash
-herdr plugin install Ars-Paulina/herdr-group-spaces
-```
-
 Requires herdr 0.9.5+, `python3` and `git`. Linux and macOS.
 
-## Show the header
+## Quick start
 
-The plugin only sets the value; your sidebar layout decides where it shows. Add a `$group` row at the top of `[ui.sidebar.spaces]` in herdr's `config.toml`:
+1. Install the plugin:
 
-```toml
-[ui.sidebar.spaces]
-rows = [
-  [{ token = "$group", fg = "#cba6f7", bold = true }],
-  ["state_icon", "workspace"],
-  ["branch", "git_status"],
-]
+   ```bash
+   herdr plugin install Ars-Paulina/herdr-group-spaces
+   ```
+
+2. Show the group header. The plugin only sets the name; your sidebar layout decides where it appears. Add a `$group` row at the top of `[ui.sidebar.spaces]` in herdr's `config.toml`:
+
+   ```toml
+   [ui.sidebar.spaces]
+   rows = [
+     [{ token = "$group", fg = "#cba6f7", bold = true }],
+     ["state_icon", "workspace"],
+     ["branch", "git_status"],
+   ]
+   ```
+
+   Spaces without the token skip that row, so the header shows once per group.
+
+3. Optional: add keyboard shortcuts to the same `config.toml`:
+
+   ```toml
+   [[keys.command]]
+   key = "prefix+alt+g"
+   type = "plugin_action"
+   command = "group-spaces.toggle"
+   description = "toggle project groups"
+
+   [[keys.command]]
+   key = "prefix+alt+r"
+   type = "plugin_action"
+   command = "group-spaces.rename"
+   description = "rename a project group"
+   ```
+
+4. Apply the config and group your Spaces right away:
+
+   ```bash
+   herdr server reload-config
+   herdr plugin action invoke group-spaces.apply
+   ```
+
+From then on it keeps itself up to date.
+
+## How to use
+
+| What | Shortcut (from step 3) | Action name | Command |
+|---|---|---|---|
+| Switch between project groups and a plain status-sorted list | `prefix+alt+g` | Toggle project groups | `herdr plugin action invoke group-spaces.toggle` |
+| Rename a group | `prefix+alt+r` | Rename a project group | `herdr plugin action invoke group-spaces.rename` |
+| Re-group now (e.g. right after `cd`-ing into another repo) | — | Re-group Spaces now | `herdr plugin action invoke group-spaces.apply` |
+
+### Toggle the view
+
+- **Project view** (default): groups with headers, as described above.
+- **Plain view**: no headers, every Space sorted by status only.
+
+Toggle again to switch back. Your choice is remembered across restarts.
+
+### Rename a group
+
+1. Press `prefix+alt+r` (or run the action). A popup lists your groups with numbers.
+2. Type the group's number and press Enter.
+3. Type the new name and press Enter. Leave it empty to go back to the default name.
+4. Choose whether to keep the name after the group closes:
+   - **Y** (or Enter): kept. The next Space you open in that repo or folder gets the name again.
+   - **n**: one-time. The rename is dropped once the group is gone.
+
+Notes:
+
+- Spaces in your home folder are renamed by their Space name, so a new Space with the same name (e.g. `~`) gets the rename too.
+- Renaming only works in the project view.
+- Renames are saved in `aliases.json` in the folder shown by `herdr plugin config-dir group-spaces`, so they survive plugin updates. You can edit that file by hand.
+
+## Update
+
+```bash
+herdr plugin update group-spaces
 ```
-
-Then run `herdr server reload-config`. Spaces without the token skip that row, so the header appears once per group.
-
-## Use
-
-- **Toggle the view:** the **Toggle project groups** action switches between the project view (groups + headers) and a plain view (no headers, all Spaces sorted by status). Run it again to switch back.
-- **Rename a group:** the **Rename a project group** action opens a popup listing your groups. Type a group's number, then a new name. Leave the name empty to go back to the default. The popup then asks whether to keep the name after the group closes: keep it (the default) and the next Space you open in that repo or folder gets the name back; say no and the rename is dropped once the group is gone. Spaces in your home folder are renamed by their Space name, so a new `~` Space reuses the name too. Renames are saved in `aliases.json` in `herdr plugin config-dir group-spaces`, so they survive updates.
-
-Bind them to keys in `config.toml` if you like:
-
-```toml
-[[keys.command]]
-key = "prefix+alt+g"
-type = "plugin_action"
-command = "group-spaces.toggle"
-description = "toggle project groups"
-
-[[keys.command]]
-key = "prefix+alt+r"
-type = "plugin_action"
-command = "group-spaces.rename"
-description = "rename a project group"
-```
-
-Also:
-
-
-- Re-group by hand (for example after `cd`-ing a pane into another repo): run the **Re-group Spaces now** action, or `herdr plugin action invoke group-spaces.apply`.
-- Self-check: `python3 group_spaces.py --test`.
 
 ## Uninstall
 
@@ -68,7 +102,13 @@ python3 group_spaces.py --clear
 herdr plugin uninstall group-spaces
 ```
 
+Then remove the `$group` row and the shortcuts from your `config.toml`.
+
 ## Limits
 
 - herdr does not run plugin hooks when a pane changes directory, so a `cd` into another repo is picked up the next time focus moves (or any other event), or with a manual re-group.
 - Project = the first pane of the Space. Spaces with panes in several repos follow that first pane.
+
+## Development
+
+Self-check: `python3 group_spaces.py --test`.
