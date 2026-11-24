@@ -124,11 +124,11 @@ def apply(clear=False):
     ws, (order, headers, listing) = state()
     if listing:  # project view: forget non-kept renames whose group has closed
         aliases, live = read_json(ALIAS_FILE, {}), {k for k, _, _ in listing}
-        kept = {k: v for k, v in aliases.items() if k in live or alias_name(v) == v or v.get("keep", True)}
+        kept = {k: v for k, v in aliases.items() if k in live or isinstance(v, str)}
         if kept != aliases:
             write_json(ALIAS_FILE, kept)
     if clear:
-        headers = dict.fromkeys(headers)
+        headers = {}
     elif order != [w["workspace_id"] for w in ws]:
         call("workspace.move_block", {"workspace_ids": order})
     for w in ws:  # only write tokens that differ, so idle runs cause no events
@@ -189,12 +189,8 @@ def main():
     with open(os.path.join(STATE_DIR, "group-spaces.lock"), "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)  # events come in bursts: run one at a time, each on fresh state
         if change:  # read fresh under the lock so a concurrent run's write is not lost
-            aliases = read_json(ALIAS_FILE, {})
-            if change[1] is None:
-                aliases.pop(change[0], None)
-            else:
-                aliases[change[0]] = change[1]
-            write_json(ALIAS_FILE, aliases)
+            aliases = {**read_json(ALIAS_FILE, {}), change[0]: change[1]}
+            write_json(ALIAS_FILE, {k: v for k, v in aliases.items() if v})  # None = back to default
         if "--toggle" in sys.argv:
             write_json(MODE_FILE, "status" if get_mode() == "project" else "project")
         apply(clear="--clear" in sys.argv)
