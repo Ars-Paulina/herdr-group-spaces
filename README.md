@@ -12,7 +12,7 @@ It runs on herdr startup and whenever a Space or pane opens/closes, a Space is r
 ## Install
 
 ```bash
-herdr plugin install <owner>/<repo>
+herdr plugin install Ars-Paulina/herdr-group-spaces
 ```
 
 Requires herdr 0.9.5+, `python3` and `git`. Linux and macOS.
