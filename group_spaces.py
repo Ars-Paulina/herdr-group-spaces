@@ -10,7 +10,7 @@ metadata token with the project name; show it with a row in [ui.sidebar.spaces].
 One-shot: herdr runs this on startup and on workspace/pane/agent events.
 Run with --test for a self-check, --clear to remove all headers.
 """
-import fcntl, json, os, socket, subprocess, sys
+import fcntl, functools, json, os, socket, subprocess, sys
 
 SOCK = os.environ.get("HERDR_SOCKET_PATH") or os.path.expanduser("~/.config/herdr/herdr.sock")
 RANK = {"blocked": 0, "working": 1, "done": 2, "idle": 9}  # idle always last, below unknown (4)
@@ -29,24 +29,23 @@ def call(method, params=None):
     return r["result"]
 
 
-def repo_of(cwd, _cache={}):
+@functools.lru_cache(maxsize=None)
+def repo_of(cwd):
     """Repo name for a folder, or None when it is not inside a git repo."""
     if not cwd:
         return None
-    if cwd not in _cache:
-        try:
-            common = subprocess.run(
-                ["git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                capture_output=True, text=True, timeout=3,
-            ).stdout.strip()
-        except (OSError, subprocess.SubprocessError):
-            common = ""
-        if common:  # /repo/.git -> repo ; bare repo dir -> its own name
-            root = os.path.dirname(common) if os.path.basename(common) == ".git" else common
-            _cache[cwd] = os.path.basename(root.rstrip("/")) or root
-        else:
-            _cache[cwd] = None
-    return _cache[cwd]
+    try:
+        common = subprocess.run(
+            ["git", "-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if not common:
+        return None
+    # /repo/.git -> repo ; bare repo dir -> its own name
+    root = os.path.dirname(common) if os.path.basename(common) == ".git" else common
+    return os.path.basename(root)
 
 
 def plan(workspaces, panes, repo_of=repo_of):
@@ -57,11 +56,12 @@ def plan(workspaces, panes, repo_of=repo_of):
     groups = {}  # insertion order -> ties keep current order
     for w in workspaces:
         d = cwd.get(w["workspace_id"])
+        n = d and os.path.normpath(d)
         repo = repo_of(d)
         if repo:  # same repo (worktrees included) -> one group
             key, name = ("repo", repo), repo
-        elif d and os.path.normpath(d) != HOME:  # no repo: same folder -> one group
-            key, name = ("dir", os.path.normpath(d)), os.path.basename(os.path.normpath(d)) or d
+        elif n and n != HOME:  # no repo: same folder -> one group
+            key, name = ("dir", n), os.path.basename(n) or n
         else:  # home folder or unknown: every space is its own group, even with the same name
             key, name = ("space", w["workspace_id"]), w.get("label") or "?"
         groups.setdefault(key, (name, []))[1].append(w)

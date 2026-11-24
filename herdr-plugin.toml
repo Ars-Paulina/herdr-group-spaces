@@ -1,6 +1,6 @@
 id = "group-spaces"
 name = "Group Spaces"
-version = "0.1.2"
+version = "0.1.3"
 min_herdr_version = "0.9.5"
 description = "Group Spaces by git project, sort by status inside each group, and label each group with a header"
 platforms = ["linux", "macos"]
