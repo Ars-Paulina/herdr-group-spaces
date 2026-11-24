@@ -4,7 +4,7 @@ A [herdr](https://herdr.dev) plugin that groups your Spaces by project and puts 
 
 - Spaces whose first pane is inside the same git repo are grouped together (worktrees count as their main repo).
 - Spaces outside a git repo are grouped by folder. Spaces in your home folder are each their own group, even when two share a name.
-- Groups are ordered by their most urgent Space: blocked, working, done, idle. Inside a group, the same order applies.
+- Groups are ordered by their most urgent Space: blocked, working, done, idle (or A-Z by name, see below). Inside a group, the same status order applies.
 - The first Space of each group gets a `$group` token holding the project name.
 
 It runs on herdr startup and whenever a Space or pane opens/closes, a Space is renamed, pane focus moves, or an agent changes status. No background process.
@@ -46,6 +46,12 @@ Requires herdr 0.9.5+, `python3` and `git`. Linux and macOS.
    type = "plugin_action"
    command = "group-spaces.rename"
    description = "rename a project group"
+
+   [[keys.command]]
+   key = "prefix+alt+s"
+   type = "plugin_action"
+   command = "group-spaces.sort"
+   description = "toggle group order (status / A-Z)"
    ```
 
 4. Apply the config and group your Spaces right away:
@@ -62,6 +68,7 @@ From then on it keeps itself up to date.
 | What | Shortcut (from step 3) | Action name | Command |
 |---|---|---|---|
 | Switch between project groups and a plain status-sorted list | `prefix+alt+g` | Toggle project groups | `herdr plugin action invoke group-spaces.toggle` |
+| Switch group order between most urgent first and A-Z by name | `prefix+alt+s` | Toggle group order (status / A-Z) | `herdr plugin action invoke group-spaces.sort` |
 | Rename a group | `prefix+alt+r` | Rename a project group | `herdr plugin action invoke group-spaces.rename` |
 | Re-group now (e.g. right after `cd`-ing into another repo) | — | Re-group Spaces now | `herdr plugin action invoke group-spaces.apply` |
 
@@ -71,6 +78,10 @@ From then on it keeps itself up to date.
 - **Plain view**: no headers, every Space sorted by status only.
 
 Toggle again to switch back. Your choice is remembered across restarts.
+
+### Sort groups A-Z
+
+Toggle group order switches the project view between "most urgent group first" (default) and alphabetical by group name (renames count, case ignored). Spaces inside each group stay sorted by status. Your choice is remembered across restarts.
 
 ### Rename a group
 

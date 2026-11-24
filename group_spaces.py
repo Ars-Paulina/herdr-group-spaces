@@ -3,8 +3,8 @@
 
 Project = git repo of the space's first pane (worktrees count as their main repo).
 Spaces outside a repo group by folder; spaces in the home folder are each their own group.
-Groups are ordered by their most urgent space: blocked, working, done, idle, rest.
-Ties keep their current order. The first space of each group gets a `$group`
+Groups are ordered by their most urgent space: blocked, working, done, idle, rest
+(or A-Z by group name, see --sort). Ties keep their current order. The first space of each group gets a `$group`
 metadata token with the project name; show it with a row in [ui.sidebar.spaces].
 
 Two views: "project" (above) and "status" (no groups: all spaces sorted by status).
@@ -14,7 +14,7 @@ group that closes and opens again gets its name back. A rename saved with keep=f
 is dropped once its group is gone.
 
 One-shot: herdr runs this on startup and on workspace/pane/agent events.
-Flags: --toggle (switch view), --rename (interactive, run in a popup),
+Flags: --toggle (switch view), --sort (group order: status / A-Z), --rename (interactive, run in a popup),
 --test (self-check), --clear (remove all headers).
 """
 import fcntl, functools, json, os, socket, subprocess, sys
@@ -27,6 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.environ.get("HERDR_PLUGIN_STATE_DIR") or HERE
 CONFIG_DIR = os.environ.get("HERDR_PLUGIN_CONFIG_DIR") or HERE
 MODE_FILE = os.path.join(STATE_DIR, "mode")
+SORT_FILE = os.path.join(STATE_DIR, "sort")  # group order: "status" or "name"
 ALIAS_FILE = os.path.join(CONFIG_DIR, "aliases.json")
 
 
@@ -83,7 +84,7 @@ def repo_of(cwd):
     return os.path.basename(root) or root
 
 
-def plan(workspaces, panes, repo_of=repo_of, aliases=None, mode="project"):
+def plan(workspaces, panes, repo_of=repo_of, aliases=None, mode="project", sort="status"):
     """Return (wanted workspace id order, {workspace_id: header or None}, [(alias key, name, size)])."""
     aliases = aliases or {}
     rank = lambda w: RANK.get(w["agent_status"], 4)
@@ -107,7 +108,8 @@ def plan(workspaces, panes, repo_of=repo_of, aliases=None, mode="project"):
         akey = "name:" + name if key[0] == "space" else ":".join(key)
         groups.setdefault(key, (akey, alias_name(aliases.get(akey)) or name, []))[2].append(w)
     order, headers, listing = [], {}, []
-    for akey, name, members in sorted(groups.values(), key=lambda g: min(map(rank, g[2]))):
+    group_key = (lambda g: g[1].casefold()) if sort == "name" else (lambda g: min(map(rank, g[2])))
+    for akey, name, members in sorted(groups.values(), key=group_key):
         listing.append((akey, name, len(members)))
         for i, w in enumerate(sorted(members, key=rank)):
             order.append(w["workspace_id"])
@@ -117,7 +119,8 @@ def plan(workspaces, panes, repo_of=repo_of, aliases=None, mode="project"):
 
 def state():
     ws = call("workspace.list")["workspaces"]
-    return ws, plan(ws, call("pane.list")["panes"], aliases=read_json(ALIAS_FILE, {}), mode=get_mode())
+    return ws, plan(ws, call("pane.list")["panes"], aliases=read_json(ALIAS_FILE, {}), mode=get_mode(),
+                    sort=read_json(SORT_FILE, "status"))
 
 
 def apply(clear=False):
@@ -177,6 +180,8 @@ def test():
     assert headers["c"] == "Main app" and headers["g"] == "My PC" and headers["b"] == "y", headers
     assert headers["e"] == headers["f"] == "Home", headers  # home spaces renamed by name, still 2 groups
     assert ("name:~", "Home", 1) in listing and listing.count(("name:~", "Home", 1)) == 2, listing
+    order, _, _ = plan(ws, panes, repos, aliases={"repo:x": "zed"}, sort="name")
+    assert order == ["g", "h", "b", "d", "c", "a", "e", "f"], order  # A-Z (PC < y < zed < ~), status inside
     order, headers, listing = plan(ws, panes, repos, mode="status")
     assert order == ["c", "b", "d", "a", "e", "f", "g", "h"] and headers == {} and listing == [], order
     print("ok")
@@ -193,6 +198,8 @@ def main():
             write_json(ALIAS_FILE, {k: v for k, v in aliases.items() if v})  # None = back to default
         if "--toggle" in sys.argv:
             write_json(MODE_FILE, "status" if get_mode() == "project" else "project")
+        if "--sort" in sys.argv:
+            write_json(SORT_FILE, "name" if read_json(SORT_FILE, "status") == "status" else "status")
         apply(clear="--clear" in sys.argv)
 
 
