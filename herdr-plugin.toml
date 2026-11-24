@@ -1,6 +1,6 @@
 id = "group-spaces"
 name = "Group Spaces"
-version = "0.2.2"
+version = "0.3.0"
 min_herdr_version = "0.9.5"
 description = "Group Spaces by git project, sort by status inside each group, and label each group with a header"
 platforms = ["linux", "macos"]
@@ -53,6 +53,13 @@ id = "toggle"
 title = "Toggle project groups"
 contexts = ["workspace"]
 command = ["python3", "-I", "group_spaces.py", "--toggle"]
+
+# Switch group order between most-urgent-first and A-Z by group name.
+[[actions]]
+id = "sort"
+title = "Toggle group order (status / A-Z)"
+contexts = ["workspace"]
+command = ["python3", "-I", "group_spaces.py", "--sort"]
 
 # Opens the rename popup below.
 [[actions]]
