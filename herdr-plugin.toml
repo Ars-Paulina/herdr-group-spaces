@@ -1,6 +1,6 @@
 id = "group-spaces"
 name = "Group Spaces"
-version = "0.1.0"
+version = "0.1.1"
 min_herdr_version = "0.9.5"
 description = "Group Spaces by git project, sort by status inside each group, and label each group with a header"
 platforms = ["linux", "macos"]
@@ -28,6 +28,12 @@ command = ["python3", "-I", "group_spaces.py"]
 
 [[events]]
 on = "pane.closed"
+command = ["python3", "-I", "group_spaces.py"]
+
+# A cd is not a plugin event (herdr 0.9.5 sends pane.updated to API subscribers only),
+# so re-check whenever focus moves: a pane that cd'd into another repo regroups as soon as you switch away.
+[[events]]
+on = "pane.focused"
 command = ["python3", "-I", "group_spaces.py"]
 
 [[events]]

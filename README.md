@@ -7,7 +7,7 @@ A [herdr](https://herdr.dev) plugin that groups your Spaces by project and puts 
 - Groups are ordered by their most urgent Space: blocked, working, done, idle. Inside a group, the same order applies.
 - The first Space of each group gets a `$group` token holding the project name.
 
-It runs on herdr startup and whenever a Space or pane opens/closes, a Space is renamed, or an agent changes status. No background process.
+It runs on herdr startup and whenever a Space or pane opens/closes, a Space is renamed, pane focus moves, or an agent changes status. No background process.
 
 ## Install
 
@@ -48,5 +48,5 @@ herdr plugin uninstall group-spaces
 
 ## Limits
 
-- A pane changing directory is not a herdr event, so a `cd` into another repo is picked up on the next event or a manual re-group.
+- herdr does not run plugin hooks when a pane changes directory, so a `cd` into another repo is picked up the next time focus moves (or any other event), or with a manual re-group.
 - Project = the first pane of the Space. Spaces with panes in several repos follow that first pane.
