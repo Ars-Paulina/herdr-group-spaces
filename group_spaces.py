@@ -29,7 +29,7 @@ def call(method, params=None):
     return r["result"]
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def repo_of(cwd):
     """Repo name for a folder, or None when it is not inside a git repo."""
     if not cwd:
@@ -45,23 +45,23 @@ def repo_of(cwd):
         return None
     # /repo/.git -> repo ; bare repo dir -> its own name
     root = os.path.dirname(common) if os.path.basename(common) == ".git" else common
-    return os.path.basename(root)
+    return os.path.basename(root) or root
 
 
 def plan(workspaces, panes, repo_of=repo_of):
     """Return (wanted workspace id order, {workspace_id: header name or None})."""
     cwd = {}
     for p in panes:  # first pane listed per workspace wins
-        cwd.setdefault(p["workspace_id"], p.get("foreground_cwd") or p.get("cwd"))
+        d = p.get("foreground_cwd") or p.get("cwd")
+        cwd.setdefault(p["workspace_id"], d and os.path.normpath(d))  # one spelling per folder
     groups = {}  # insertion order -> ties keep current order
     for w in workspaces:
         d = cwd.get(w["workspace_id"])
-        n = d and os.path.normpath(d)
         repo = repo_of(d)
         if repo:  # same repo (worktrees included) -> one group
             key, name = ("repo", repo), repo
-        elif n and n != HOME:  # no repo: same folder -> one group
-            key, name = ("dir", n), os.path.basename(n) or n
+        elif d and d != HOME:  # no repo: same folder -> one group
+            key, name = ("dir", d), os.path.basename(d) or d
         else:  # home folder or unknown: every space is its own group, even with the same name
             key, name = ("space", w["workspace_id"]), w.get("label") or "?"
         groups.setdefault(key, (name, []))[1].append(w)
