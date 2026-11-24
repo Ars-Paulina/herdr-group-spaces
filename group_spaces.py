@@ -7,8 +7,12 @@ Groups are ordered by their most urgent space: blocked, working, done, idle, res
 Ties keep their current order. The first space of each group gets a `$group`
 metadata token with the project name; show it with a row in [ui.sidebar.spaces].
 
+Two views: "project" (above) and "status" (no groups: all spaces sorted by status).
+Group names can be renamed; renames live in aliases.json in the plugin config dir.
+
 One-shot: herdr runs this on startup and on workspace/pane/agent events.
-Run with --test for a self-check, --clear to remove all headers.
+Flags: --toggle (switch view), --rename (interactive, run in a popup),
+--test (self-check), --clear (remove all headers).
 """
 import fcntl, functools, json, os, socket, subprocess, sys
 
@@ -16,6 +20,29 @@ SOCK = os.environ.get("HERDR_SOCKET_PATH") or os.path.expanduser("~/.config/herd
 RANK = {"blocked": 0, "working": 1, "done": 2, "idle": 9}  # idle always last, below unknown (4)
 SOURCE = "group-spaces"
 HOME = os.path.normpath(os.path.expanduser("~"))
+HERE = os.path.dirname(os.path.abspath(__file__))
+STATE_DIR = os.environ.get("HERDR_PLUGIN_STATE_DIR") or HERE
+CONFIG_DIR = os.environ.get("HERDR_PLUGIN_CONFIG_DIR") or HERE
+MODE_FILE = os.path.join(STATE_DIR, "mode")
+ALIAS_FILE = os.path.join(CONFIG_DIR, "aliases.json")
+
+
+def read_json(path, default):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return default
+
+
+def write_json(path, data):
+    with open(path + ".tmp", "w") as f:
+        json.dump(data, f, indent=2, sort_keys=True)
+    os.replace(path + ".tmp", path)
+
+
+def get_mode():
+    return read_json(MODE_FILE, "project")
 
 
 def call(method, params=None):
@@ -48,8 +75,12 @@ def repo_of(cwd):
     return os.path.basename(root) or root
 
 
-def plan(workspaces, panes, repo_of=repo_of):
-    """Return (wanted workspace id order, {workspace_id: header name or None})."""
+def plan(workspaces, panes, repo_of=repo_of, aliases=None, mode="project"):
+    """Return (wanted workspace id order, {workspace_id: header or None}, [(group key, name, size)])."""
+    aliases = aliases or {}
+    rank = lambda w: RANK.get(w["agent_status"], 4)
+    if mode == "status":  # plain view: no groups, just status order
+        return [w["workspace_id"] for w in sorted(workspaces, key=rank)], {}, []
     cwd = {}
     for p in panes:  # first pane listed per workspace wins
         d = p.get("foreground_cwd") or p.get("cwd")
@@ -64,19 +95,24 @@ def plan(workspaces, panes, repo_of=repo_of):
             key, name = ("dir", d), os.path.basename(d) or d
         else:  # home folder or unknown: every space is its own group, even with the same name
             key, name = ("space", w["workspace_id"]), w.get("label") or "?"
-        groups.setdefault(key, (name, []))[1].append(w)
-    rank = lambda w: RANK.get(w["agent_status"], 4)
-    order, headers = [], {}
-    for name, members in sorted(groups.values(), key=lambda g: min(map(rank, g[1]))):
+        key = ":".join(key)
+        groups.setdefault(key, (aliases.get(key) or name, []))[1].append(w)
+    order, headers, listing = [], {}, []
+    for key, (name, members) in sorted(groups.items(), key=lambda g: min(map(rank, g[1][1]))):
+        listing.append((key, name, len(members)))
         for i, w in enumerate(sorted(members, key=rank)):
             order.append(w["workspace_id"])
             headers[w["workspace_id"]] = name if i == 0 else None
-    return order, headers
+    return order, headers, listing
+
+
+def state():
+    ws = call("workspace.list")["workspaces"]
+    return ws, plan(ws, call("pane.list")["panes"], aliases=read_json(ALIAS_FILE, {}), mode=get_mode())
 
 
 def apply(clear=False):
-    ws = call("workspace.list")["workspaces"]
-    order, headers = plan(ws, call("pane.list")["panes"])
+    ws, (order, headers, _) = state()
     if clear:
         headers = dict.fromkeys(headers)
     elif order != [w["workspace_id"] for w in ws]:
@@ -88,6 +124,27 @@ def apply(clear=False):
                  {"workspace_id": w["workspace_id"], "source": SOURCE, "tokens": {"group": want}})
 
 
+def rename():
+    """Interactive: pick a group, type a new name (empty = back to the default)."""
+    if get_mode() != "project":
+        input("Project view is off; toggle it on to rename groups. Press Enter to close.")
+        return
+    _, (_, _, listing) = state()
+    aliases = read_json(ALIAS_FILE, {})
+    for i, (key, name, size) in enumerate(listing, 1):
+        print(f"{i:>2}) {name}  ({size} space{'s' if size > 1 else ''}){'  *renamed' if key in aliases else ''}")
+    pick = input("\nGroup number to rename (Enter = cancel): ").strip()
+    if not pick.isdigit() or not 1 <= int(pick) <= len(listing):
+        return
+    key = listing[int(pick) - 1][0]
+    new = input("New name (Enter = default name): ").strip()
+    if new:
+        aliases[key] = new
+    else:
+        aliases.pop(key, None)
+    write_json(ALIAS_FILE, aliases)
+
+
 def test():
     repos = {"/x": "x", "/y": "y"}.get
     ws = [{"workspace_id": i, "label": l, "agent_status": s} for i, l, s in [
@@ -96,20 +153,27 @@ def test():
     panes = [{"workspace_id": i, "cwd": c} for i, c in
              [("a", "/x"), ("b", "/y"), ("c", "/x"), ("d", "/y"), ("e", HOME), ("f", HOME),
               ("g", "/p/PC"), ("h", "/p/PC/")]]
-    order, headers = plan(ws, panes, repos)
+    order, headers, listing = plan(ws, panes, repos)
     assert order == ["c", "a", "b", "d", "e", "f", "g", "h"], order  # x holds the blocked one, so first
     assert headers == {"c": "x", "a": None, "b": "y", "d": None,
                        "e": "~", "f": "~",  # home: separate groups even with the same name
                        "g": "PC", "h": None}, headers  # same non-repo folder: one group
+    _, headers, _ = plan(ws, panes, repos, aliases={"repo:x": "Main app", "dir:/p/PC": "My PC"})
+    assert headers["c"] == "Main app" and headers["g"] == "My PC" and headers["b"] == "y", headers
+    order, headers, listing = plan(ws, panes, repos, mode="status")
+    assert order == ["c", "b", "d", "a", "e", "f", "g", "h"] and headers == {} and listing == [], order
     print("ok")
 
 
 def main():
     if "--test" in sys.argv:
         return test()
-    lock_dir = os.environ.get("HERDR_PLUGIN_STATE_DIR") or os.path.dirname(os.path.abspath(__file__))
-    with open(os.path.join(lock_dir, "group-spaces.lock"), "w") as lock:
+    if "--rename" in sys.argv:
+        rename()  # outside the lock: it waits for typing
+    with open(os.path.join(STATE_DIR, "group-spaces.lock"), "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)  # events come in bursts: run one at a time, each on fresh state
+        if "--toggle" in sys.argv:
+            write_json(MODE_FILE, "status" if get_mode() == "project" else "project")
         apply(clear="--clear" in sys.argv)
 
 

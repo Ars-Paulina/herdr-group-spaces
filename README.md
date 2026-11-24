@@ -34,6 +34,28 @@ Then run `herdr server reload-config`. Spaces without the token skip that row, s
 
 ## Use
 
+- **Toggle the view:** the **Toggle project groups** action switches between the project view (groups + headers) and a plain view (no headers, all Spaces sorted by status). Run it again to switch back.
+- **Rename a group:** the **Rename a project group** action opens a popup listing your groups. Type a group's number, then a new name. Leave the name empty to go back to the default. Renames are saved in `aliases.json` in `herdr plugin config-dir group-spaces`, so they survive updates.
+
+Bind them to keys in `config.toml` if you like:
+
+```toml
+[[keys.command]]
+key = "prefix+alt+g"
+type = "plugin_action"
+command = "group-spaces.toggle"
+description = "toggle project groups"
+
+[[keys.command]]
+key = "prefix+alt+r"
+type = "plugin_action"
+command = "group-spaces.rename"
+description = "rename a project group"
+```
+
+Also:
+
+
 - Re-group by hand (for example after `cd`-ing a pane into another repo): run the **Re-group Spaces now** action, or `herdr plugin action invoke group-spaces.apply`.
 - Self-check: `python3 group_spaces.py --test`.
 

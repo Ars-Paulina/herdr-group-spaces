@@ -1,6 +1,6 @@
 id = "group-spaces"
 name = "Group Spaces"
-version = "0.1.4"
+version = "0.2.0"
 min_herdr_version = "0.9.5"
 description = "Group Spaces by git project, sort by status inside each group, and label each group with a header"
 platforms = ["linux", "macos"]
@@ -46,3 +46,25 @@ id = "apply"
 title = "Re-group Spaces now"
 contexts = ["workspace"]
 command = ["python3", "-I", "group_spaces.py"]
+
+# Switch between the project view (groups + headers) and a plain status-sorted view.
+[[actions]]
+id = "toggle"
+title = "Toggle project groups"
+contexts = ["workspace"]
+command = ["python3", "-I", "group_spaces.py", "--toggle"]
+
+# Opens the rename popup below.
+[[actions]]
+id = "rename"
+title = "Rename a project group"
+contexts = ["workspace"]
+command = ["sh", "-c", "exec \"${HERDR_BIN_PATH:-herdr}\" plugin pane open --plugin group-spaces --entrypoint rename"]
+
+[[panes]]
+id = "rename"
+title = "Rename a project group"
+placement = "popup"
+width = "60%"
+height = "60%"
+command = ["python3", "-I", "group_spaces.py", "--rename"]
