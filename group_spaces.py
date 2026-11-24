@@ -9,6 +9,9 @@ metadata token with the project name; show it with a row in [ui.sidebar.spaces].
 
 Two views: "project" (above) and "status" (no groups: all spaces sorted by status).
 Group names can be renamed; renames live in aliases.json in the plugin config dir.
+Renames are keyed by repo name or folder path (home-folder spaces: by space name), so a
+group that closes and opens again gets its name back. A rename saved with keep=false
+is dropped once its group is gone.
 
 One-shot: herdr runs this on startup and on workspace/pane/agent events.
 Flags: --toggle (switch view), --rename (interactive, run in a popup),
@@ -39,6 +42,11 @@ def write_json(path, data):
     with open(path + ".tmp", "w") as f:
         json.dump(data, f, indent=2, sort_keys=True)
     os.replace(path + ".tmp", path)
+
+
+def alias_name(v):
+    """aliases.json values: "name" (kept) or {"name": "...", "keep": false} (dropped when the group closes)."""
+    return v.get("name") if isinstance(v, dict) else v
 
 
 def get_mode():
@@ -76,7 +84,7 @@ def repo_of(cwd):
 
 
 def plan(workspaces, panes, repo_of=repo_of, aliases=None, mode="project"):
-    """Return (wanted workspace id order, {workspace_id: header or None}, [(group key, name, size)])."""
+    """Return (wanted workspace id order, {workspace_id: header or None}, [(alias key, name, size)])."""
     aliases = aliases or {}
     rank = lambda w: RANK.get(w["agent_status"], 4)
     if mode == "status":  # plain view: no groups, just status order
@@ -95,11 +103,12 @@ def plan(workspaces, panes, repo_of=repo_of, aliases=None, mode="project"):
             key, name = ("dir", d), os.path.basename(d) or d
         else:  # home folder or unknown: every space is its own group, even with the same name
             key, name = ("space", w["workspace_id"]), w.get("label") or "?"
-        key = ":".join(key)
-        groups.setdefault(key, (aliases.get(key) or name, []))[1].append(w)
+        # home-folder spaces are separate groups but are renamed by space name, so the name survives a new space
+        akey = "name:" + name if key[0] == "space" else ":".join(key)
+        groups.setdefault(key, (akey, alias_name(aliases.get(akey)) or name, []))[2].append(w)
     order, headers, listing = [], {}, []
-    for key, (name, members) in sorted(groups.items(), key=lambda g: min(map(rank, g[1][1]))):
-        listing.append((key, name, len(members)))
+    for akey, name, members in sorted(groups.values(), key=lambda g: min(map(rank, g[2]))):
+        listing.append((akey, name, len(members)))
         for i, w in enumerate(sorted(members, key=rank)):
             order.append(w["workspace_id"])
             headers[w["workspace_id"]] = name if i == 0 else None
@@ -112,7 +121,12 @@ def state():
 
 
 def apply(clear=False):
-    ws, (order, headers, _) = state()
+    ws, (order, headers, listing) = state()
+    if listing:  # project view: forget non-kept renames whose group has closed
+        aliases, live = read_json(ALIAS_FILE, {}), {k for k, _, _ in listing}
+        kept = {k: v for k, v in aliases.items() if k in live or alias_name(v) == v or v.get("keep", True)}
+        if kept != aliases:
+            write_json(ALIAS_FILE, kept)
     if clear:
         headers = dict.fromkeys(headers)
     elif order != [w["workspace_id"] for w in ws]:
@@ -125,24 +139,24 @@ def apply(clear=False):
 
 
 def rename():
-    """Interactive: pick a group, type a new name (empty = back to the default)."""
+    """Interactive: pick a group, type a new name (empty = back to the default).
+    Returns (alias key, new value or None) to save, or None to change nothing."""
     if get_mode() != "project":
         input("Project view is off; toggle it on to rename groups. Press Enter to close.")
-        return
+        return None
     _, (_, _, listing) = state()
     aliases = read_json(ALIAS_FILE, {})
     for i, (key, name, size) in enumerate(listing, 1):
         print(f"{i:>2}) {name}  ({size} space{'s' if size > 1 else ''}){'  *renamed' if key in aliases else ''}")
     pick = input("\nGroup number to rename (Enter = cancel): ").strip()
     if not pick.isdigit() or not 1 <= int(pick) <= len(listing):
-        return
+        return None
     key = listing[int(pick) - 1][0]
     new = input("New name (Enter = default name): ").strip()
-    if new:
-        aliases[key] = new
-    else:
-        aliases.pop(key, None)
-    write_json(ALIAS_FILE, aliases)
+    if not new:
+        return key, None
+    keep = input("Keep this name after the group closes? [Y/n]: ").strip().lower() not in ("n", "no")
+    return key, new if keep else {"name": new, "keep": False}
 
 
 def test():
@@ -158,8 +172,11 @@ def test():
     assert headers == {"c": "x", "a": None, "b": "y", "d": None,
                        "e": "~", "f": "~",  # home: separate groups even with the same name
                        "g": "PC", "h": None}, headers  # same non-repo folder: one group
-    _, headers, _ = plan(ws, panes, repos, aliases={"repo:x": "Main app", "dir:/p/PC": "My PC"})
+    _, headers, listing = plan(ws, panes, repos, aliases={
+        "repo:x": "Main app", "dir:/p/PC": {"name": "My PC", "keep": False}, "name:~": "Home"})
     assert headers["c"] == "Main app" and headers["g"] == "My PC" and headers["b"] == "y", headers
+    assert headers["e"] == headers["f"] == "Home", headers  # home spaces renamed by name, still 2 groups
+    assert ("name:~", "Home", 1) in listing and listing.count(("name:~", "Home", 1)) == 2, listing
     order, headers, listing = plan(ws, panes, repos, mode="status")
     assert order == ["c", "b", "d", "a", "e", "f", "g", "h"] and headers == {} and listing == [], order
     print("ok")
@@ -168,10 +185,16 @@ def test():
 def main():
     if "--test" in sys.argv:
         return test()
-    if "--rename" in sys.argv:
-        rename()  # outside the lock: it waits for typing
+    change = rename() if "--rename" in sys.argv else None  # outside the lock: it waits for typing
     with open(os.path.join(STATE_DIR, "group-spaces.lock"), "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)  # events come in bursts: run one at a time, each on fresh state
+        if change:  # read fresh under the lock so a concurrent run's write is not lost
+            aliases = read_json(ALIAS_FILE, {})
+            if change[1] is None:
+                aliases.pop(change[0], None)
+            else:
+                aliases[change[0]] = change[1]
+            write_json(ALIAS_FILE, aliases)
         if "--toggle" in sys.argv:
             write_json(MODE_FILE, "status" if get_mode() == "project" else "project")
         apply(clear="--clear" in sys.argv)

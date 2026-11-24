@@ -35,7 +35,7 @@ Then run `herdr server reload-config`. Spaces without the token skip that row, s
 ## Use
 
 - **Toggle the view:** the **Toggle project groups** action switches between the project view (groups + headers) and a plain view (no headers, all Spaces sorted by status). Run it again to switch back.
-- **Rename a group:** the **Rename a project group** action opens a popup listing your groups. Type a group's number, then a new name. Leave the name empty to go back to the default. Renames are saved in `aliases.json` in `herdr plugin config-dir group-spaces`, so they survive updates.
+- **Rename a group:** the **Rename a project group** action opens a popup listing your groups. Type a group's number, then a new name. Leave the name empty to go back to the default. The popup then asks whether to keep the name after the group closes: keep it (the default) and the next Space you open in that repo or folder gets the name back; say no and the rename is dropped once the group is gone. Spaces in your home folder are renamed by their Space name, so a new `~` Space reuses the name too. Renames are saved in `aliases.json` in `herdr plugin config-dir group-spaces`, so they survive updates.
 
 Bind them to keys in `config.toml` if you like:
 
